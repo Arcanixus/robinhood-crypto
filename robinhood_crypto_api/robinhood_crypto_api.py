@@ -32,6 +32,23 @@ class QuoteException(RobinhoodCryptoException):
 class AccountNotFoundException(RobinhoodCryptoException):
     pass
 
+def get_mfa_token(secret):
+    import hmac
+    import base64
+    import hashlib
+    import struct
+    import time
+
+    intervals_no = int(time.time()) // 30
+    key = base64.b32decode(secret, True)
+    msg = struct.pack(">Q", intervals_no)
+    h = hmac.new(key, msg, hashlib.sha1).digest()
+    o = h[19] & 15
+    h = "{0:06d}".format(
+        (struct.unpack(">I", h[o : o + 4])[0] & 0x7FFFFFFF) % 1000000  # noqa: E203
+    )
+    return h
+
 
 def reauth(f):
     @wraps(f)
@@ -89,14 +106,15 @@ class RobinhoodCrypto:
         "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/65.0.3325.181 Safari/537.36",
     }
 
-    def __init__(self, username='', password='', access_token=''):
+    def __init__(self, username='', password='', access_token='', QR_code=''):
         self.username = username
         self.password = password
+        self.QR_code = QR_code
         self.device_token = None
         if access_token:
             _access_token = access_token
         else:
-            _access_token = self.get_access_token(self.username, self.password)
+            _access_token = self.get_access_token(self.username, self.password, mfa_code=get_mfa_token(self.QR_code))
         self.setup_for_api_call(_access_token)
 
     def setup_for_api_call(self, access_token):
